@@ -3,7 +3,7 @@
 This article covers the math and matrix shapes of the Llama3 architecture. 
 
 ## High-level Llama3.1 architecture
-Below is a diagram showing the Llama 3.1 8B architecture, which is a "dense" transformer.
+Below is a diagram showing the Llama 3.1 8B architecture, which is a "dense" transformer
 
 <img src="llama3_architecture.png" alt="Llama3 Architecture" width="600">
 
@@ -34,160 +34,25 @@ Where:
 - $V$ = vocabulary size
 
 ## Math
-**Inputs / Sampling**
 
-Let tokens be $S: (s)$.  
-
-$X = \mathrm{Embed}(S) = W_{\text{embeddings}}[S]$
-
-(Equivalent to treating $S$ as one-hot and multiplying by $W_{\text{embeddings}}$ for exposition.)
-
-$(s) \mapsto (s, d)$
-
-**Repeat for layers $\ell = 1..L$:**
-
-1. **Pre-RMSNorm (for Attention sublayer)**  
-   
-   Define $\mathrm{RMSNorm}(x; w) = \dfrac{x}{\sqrt{\mathrm{mean}(x^2) + \epsilon}} \odot w$.  
-
-   $X_{\text{attn in}} = \mathrm{RMSNorm}(X; w_{a,\ell})$
-
-   $(s, d) \odot (d) \to (s, d)$
-
-2. **QKV projections**  
-
-   $Q = X_{\text{attn in}}W_{q,\ell}$
-
-   $K = X_{\text{attn in}}W_{k,\ell}$
-
-   $V = X_{\text{attn in}}W_{v,\ell}$
-
-   $(s, d) \times (d, d) \to (s, d)$
-
-   Reshape Q,K,V for attention heads:
-
-   $Q,K,V \;\mapsto\; (s, n_h, d_h),\quad d = n_h \cdot d_h$
-
-   Where:
-   - $n_h$ = number of attention heads
-   - $d_h$ = attention head dimension 
-
-
-3. **RoPE embeddings (per head)**  
-   
-   Apply RoPE along the last (head) dimension for each head:
-
-   $Q_h = Q_h \odot \cos + \mathrm{rotate}(Q_h)\odot \sin$
-
-   $K_h = K_h \odot \cos + \mathrm{rotate}(K_h)\odot \sin$
-
-   $(s, d_h) \to (s, d_h)\ \text{per head}$
-
-4. **Multi-Head Attention (per head $h$)**  
-   
-   Compute attention scores, weights, and context per head:
-
-   $S_h = \frac{Q_h K_h^\top}{\sqrt{d_h}} + M \quad \text{(attention scores)}$
-
-   $A_h = \mathrm{softmax}(S_h) \quad \text{(attention weights)}$
-
-   $C_h = A_h V_h \quad \text{(attention context)}$
-
-   Concatenate heads:  
-
-   $C = \mathrm{concat}_h(C_h) \in \mathbb{R}^{s\times d}$
-
-   *Mask definition:* $M_{ij}=0$ if $j\le i$, and $-\infty$ otherwise; broadcast across batch and heads.  
-   *Softmax is implemented with max-subtraction for numerical stability.*
-
-5. **Attention Output Projection**  
-
-   $X_{\text{attn out}} = C\, W_{o,\ell}$
-
-   $(s, d) \times (d, d) \to (s, d)$
-
-6. **Residual**  
-
-   $X_{\text{attn out res}} = X + X_{\text{attn out}}$
-
-   $(s, d) + (s, d) \to (s, d)$
-
-7. **Pre-RMSNorm (for SwiGLU FFN sublayer)**  
-
-   $X_{\text{ffn in}} = \mathrm{RMSNorm}(X_{\text{attn out res}}; w_{b,\ell})$
-
-   $(s, d) \odot (d) \to (s, d)$
-
-8. **SwiGLU FFN**  
-
-   $U = X_{\text{ffn in}} W_{\text{up},\ell}$
-
-   $G = X_{\text{ffn in}} W_{\text{gate},\ell}$
-
-   $X_{\text{ffn out}} = (\mathrm{SiLU}(G)\odot U)\, W_{\text{down},\ell}$
-
-   $((s, 4d) \odot (s, 4d)) \times (4d, d) \to (s, d)$
-
-   Where $\mathrm{SiLU}(x) = x \odot \sigma(x) = \dfrac{x}{1 + e^{-x}}$.
-
-9. **Residual**  
-
-   $X_{\text{ffn out res}} = X_{\text{attn out res}} + X_{\text{ffn out}}$
-
-   $(s, d) + (s, d) \to (s, d)$
-
-10. **Feed output of layer $\ell$ into input of next layer $\ell+1$**  
-
-    $X = X_{\text{ffn out res}}$
-
-
-**Final RMSNorm**  
-
-$X_{\text{final}} = \mathrm{RMSNorm}(X; w_{\text{final}}) = \frac{X}{\sqrt{\mathrm{mean}(X^2) + \epsilon}} \odot w_{\text{final}}$
-
-$(s, d) \odot (d) \to (s, d)$
-
-**Logits**  
-
-$\text{logits} = X_{\text{final}} W_{\text{lm}}$
-
-$(s, d) \times (d, V) \to (s, V)$
-
-*Some implementations tie $W_{\text{lm}} = W_{\text{embeddings}}^T$*
-
-**Output token (choose one):**
-
-1. **Greedy Decoding**
-
-   $\text{next token} = \arg\max_i \text{logits}_i$
-
-   $(s, V) \to (s,)$
-
-2. **Sampling with Temperature**
-
-   $p_i = \frac{\exp(\text{logits}_i / T)}{\sum_j \exp(\text{logits}_j / T)}$
-
-   $(s, V) \to (s, V)$
-
-   $\text{next token} \sim \text{Categorical}(p)$
-
-   $(s, V) \to (s,)$
-
-3. **Top-k Sampling**
-
-   $\text{top-k logits} = \text{top}_k(\text{logits})$
-
-   $(s, V) \to (s, k)$
-
-   $p_i = \frac{\exp(\text{top-k logits}_i / T)}{\sum_j \exp(\text{top-k logits}_j / T)}$
-
-   $(s, k) \to (s, k)$
-
-   $\text{next token} \sim \text{Categorical}(p)$
-
-   $(s, k) \to (s,)$
-
-Where $T$ is temperature and $k$ is the number of top tokens to consider.
+| Step | Math Formulas and Shapes |
+|------|--------------------------|
+| **1. Input Embedding** | Let tokens be $S: (s)$<br><br>$X = \mathrm{Embed}(S) = W_{\text{embeddings}}[S]$<br><br>$(s) \mapsto (s, d)$<br><br>*(Equivalent to treating $S$ as one-hot and multiplying by $W_{\text{embeddings}}$ for exposition.)* |
+| **🔄 Repeat steps 2-11 for layers $\ell = 1..L$** ||
+| **2. Pre-RMSNorm (Attention)** | Define $\mathrm{RMSNorm}(x; w) = \dfrac{x}{\sqrt{\mathrm{mean}(x^2) + \epsilon}} \odot w$<br><br>$X_{\text{attn in}} = \mathrm{RMSNorm}(X; w_{a,\ell})$<br><br>$(s, d) \odot (d) \to (s, d)$ |
+| **3. QKV Projections** | $Q = X_{\text{attn in}}W_{q,\ell}$<br><br>$K = X_{\text{attn in}}W_{k,\ell}$<br><br>$V = X_{\text{attn in}}W_{v,\ell}$<br><br>$(s, d) \times (d, d) \to (s, d)$<br><br>Reshape: $Q,K,V \;\mapsto\; (s, n_h, d_h),\quad d = n_h \cdot d_h$<br><br>Where: $n_h$ = number of attention heads, $d_h$ = attention head dimension |
+| **4. RoPE Embeddings** | Apply RoPE along the last (head) dimension for each head:<br><br>$Q_h = Q_h \odot \cos + \mathrm{rotate}(Q_h)\odot \sin$<br><br>$K_h = K_h \odot \cos + \mathrm{rotate}(K_h)\odot \sin$<br><br>$(s, d_h) \to (s, d_h)\ \text{per head}$ |
+| **5. Multi-Head Attention** | Compute attention scores, weights, and context per head:<br><br>$S_h = \frac{Q_h K_h^\top}{\sqrt{d_h}} + M \quad \text{(attention scores)}$<br><br>$A_h = \mathrm{softmax}(S_h) \quad \text{(attention weights)}$<br><br>$C_h = A_h V_h \quad \text{(attention context)}$<br><br>Concatenate heads: $C = \mathrm{concat}_h(C_h) \in \mathbb{R}^{s\times d}$<br><br>Causal mask where $M_{i,j} = 0$ when $j \leq i$ and $M_{i,j} = -\infty$ when $j > i$ |
+| **6. Attention Output Projection** | $X_{\text{attn out}} = C\, W_{o,\ell}$<br><br>$(s, d) \times (d, d) \to (s, d)$ |
+| **7. Residual (Attention)** | $X_{\text{attn out res}} = X + X_{\text{attn out}}$<br><br>$(s, d) + (s, d) \to (s, d)$ |
+| **8. Pre-RMSNorm (FFN)** | $X_{\text{ffn in}} = \mathrm{RMSNorm}(X_{\text{attn out res}}; w_{b,\ell})$<br><br>$(s, d) \odot (d) \to (s, d)$ |
+| **9. SwiGLU FFN** | $U = X_{\text{ffn in}} W_{\text{up},\ell}$<br><br>$G = X_{\text{ffn in}} W_{\text{gate},\ell}$<br><br>$X_{\text{ffn out}} = (\mathrm{SiLU}(G)\odot U)\, W_{\text{down},\ell}$<br><br>$((s, 4d) \odot (s, 4d)) \times (4d, d) \to (s, d)$<br><br>Where $\mathrm{SiLU}(x) = x \odot \sigma(x) = \dfrac{x}{1 + e^{-x}}$ |
+| **10. Residual (FFN)** | $X_{\text{ffn out res}} = X_{\text{attn out res}} + X_{\text{ffn out}}$<br><br>$(s, d) + (s, d) \to (s, d)$ |
+| **11. Layer Output** | Feed output into next layer: $X = X_{\text{ffn out res}}$ |
+| **End of transformer blocks** ||
+| **12. Final RMSNorm** | $X_{\text{final}} = \mathrm{RMSNorm}(X; w_{\text{final}}) = \frac{X}{\sqrt{\mathrm{mean}(X^2) + \epsilon}} \odot w_{\text{final}}$<br><br>$(s, d) \odot (d) \to (s, d)$ |
+| **13. Logits** | $\text{logits} = X_{\text{final}} W_{\text{lm}}$<br><br>$(s, d) \times (d, V) \to (s, V)$<br><br>Some implementations tie $W_{\text{lm}} = W_{\text{embeddings}}^T$ |
+| **14. Output Generation** | **Greedy Decoding:**<br>$\text{next token} = \arg\max_i \text{logits}_i$, $(s, V) \to (s,)$<br><br>**Temperature Sampling:**<br>$p_i = \frac{\exp(\text{logits}_i / T)}{\sum_j \exp(\text{logits}_j / T)}$, $(s, V) \to (s, V)$<br>$\text{next token} \sim \text{Categorical}(p)$, $(s, V) \to (s,)$<br><br>**Top-k Sampling:**<br>$\text{top-k logits} = \text{top}_k(\text{logits})$, $(s, V) \to (s, k)$<br>$p_i = \frac{\exp(\text{top-k logits}_i / T)}{\sum_j \exp(\text{top-k logits}_j / T)}$, $(s, k) \to (s, k)$<br>$\text{next token} \sim \text{Categorical}(p)$, $(s, k) \to (s,)$<br><br>Where $T$ = temperature, $k$ = number of top tokens |
 
 ## Differences between the math above and a practical Llama3 implementation
 
