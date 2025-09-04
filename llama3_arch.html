@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Llama3 Architecture - Math</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$']],
+                displayMath: [['70747', '70747']]
+            }
+        };
+    </script>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; 
+            max-width: 1000px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            line-height: 1.6; 
+        }
+        table { 
+            border-collapse: collapse; 
+            width: 100%; 
+            margin: 20px 0; 
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 12px; 
+            text-align: left; 
+            vertical-align: top; 
+        }
+        th { 
+            background-color: #f5f5f5; 
+            font-weight: 600; 
+        }
+        code { 
+            background-color: #f6f8fa; 
+            padding: 2px 4px; 
+            border-radius: 3px; 
+        }
+        img { 
+            max-width: 600px; 
+            height: auto; 
+            display: block; 
+            margin: 20px auto; 
+        }
+        h1, h2, h3 { 
+            color: #24292e; 
+        }
+        .MathJax { 
+            font-size: 1.2em !important; 
+        }
+        tr:nth-child(even) { 
+            background-color: #f9f9f9; 
+        }
+        @media print {
+            body { margin: 0; padding: 15px; }
+            table { page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+<h1>Llama3 Architecture - Math</h1>
+<p>This article covers the math and matrix shapes of the Llama3 architecture. </p>
+<h2>High-level Llama3.1 architecture</h2>
+<p>Below is a diagram showing the Llama 3.1 8B architecture, which is a "dense" transformer</p>
+<p><img src="llama3_architecture.png" alt="Llama3 Architecture" width="600"></p>
+<h2>Matrix Dimensions</h2>
+<h3>Model Parameters (Weights)</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+<th>Dimensions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$W_{\text{embeddings}}$</td>
+<td>Token embedding matrix</td>
+<td>$(V, d)$</td>
+</tr>
+<tr>
+<td>$w_{a,\ell}, w_{b,\ell}$</td>
+<td>RMSNorm scale parameters (layer $\ell$)</td>
+<td>$(d,)$</td>
+</tr>
+<tr>
+<td>$W_{q,\ell}, W_{k,\ell}, W_{v,\ell}$</td>
+<td>QKV projection weights (layer $\ell$)</td>
+<td>$(d, d)$</td>
+</tr>
+<tr>
+<td>$W_{o,\ell}$</td>
+<td>Output projection weights (layer $\ell$)</td>
+<td>$(d, d)$</td>
+</tr>
+<tr>
+<td>$W_{\text{gate},\ell}, W_{\text{up},\ell}$</td>
+<td>FFN gate/up weights (layer $\ell$)</td>
+<td>$(d, 4d)$</td>
+</tr>
+<tr>
+<td>$W_{\text{down},\ell}$</td>
+<td>FFN down weights (layer $\ell$)</td>
+<td>$(4d, d)$</td>
+</tr>
+<tr>
+<td>$W_{\text{lm}}$</td>
+<td>Language model head</td>
+<td>$(d, V)$</td>
+</tr>
+<tr>
+<td>$w_{\text{final}}$</td>
+<td>Final RMSNorm scale parameters</td>
+<td>$(d,)$</td>
+</tr>
+</tbody>
+</table>
+<p>Where $\ell$ = layer index ($\ell = 1, 2, \ldots, L$)</p>
+<h3>Input:</h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Description</th>
+<th>Dimensions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$S$</td>
+<td>Token sequence (input IDs)</td>
+<td>$(s,)$</td>
+</tr>
+</tbody>
+</table>
+<p>Where:
+- $s$ = sequence length
+- $d$ = model dimension (hidden size)
+- $V$ = vocabulary size</p>
+<h2>Math</h2>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Math Formulas and Shapes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>1. Input Embedding</strong></td>
+<td>Let tokens be $S: (s)$<br><br>$X = \mathrm{Embed}(S) = W_{\text{embeddings}}[S]$<br><br>$(s) \mapsto (s, d)$<br><br><em>(Equivalent to treating $S$ as one-hot and multiplying by $W_{\text{embeddings}}$ for exposition.)</em></td>
+</tr>
+<tr>
+<td><strong>🔄 Repeat steps 2-11 for layers $\ell = 1..L$</strong></td>
+<td></td>
+</tr>
+<tr>
+<td><strong>2. Pre-RMSNorm (Attention)</strong></td>
+<td>Define $\mathrm{RMSNorm}(x; w) = \dfrac{x}{\sqrt{\mathrm{mean}(x^2) + \epsilon}} \odot w$<br><br>$X_{\text{attn in}} = \mathrm{RMSNorm}(X; w_{a,\ell})$<br><br>$(s, d) \odot (d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>3. QKV Projections</strong></td>
+<td>$Q = X_{\text{attn in}}W_{q,\ell}$<br><br>$K = X_{\text{attn in}}W_{k,\ell}$<br><br>$V = X_{\text{attn in}}W_{v,\ell}$<br><br>$(s, d) \times (d, d) \to (s, d)$<br><br>Reshape: $Q,K,V \;\mapsto\; (s, n_h, d_h),\quad d = n_h \cdot d_h$<br><br>Where: $n_h$ = number of attention heads, $d_h$ = attention head dimension</td>
+</tr>
+<tr>
+<td><strong>4. RoPE Embeddings</strong></td>
+<td>Apply RoPE along the last (head) dimension for each head:<br><br>$Q_h = Q_h \odot \cos + \mathrm{rotate}(Q_h)\odot \sin$<br><br>$K_h = K_h \odot \cos + \mathrm{rotate}(K_h)\odot \sin$<br><br>$(s, d_h) \to (s, d_h)\ \text{per head}$</td>
+</tr>
+<tr>
+<td><strong>5. Multi-Head Attention</strong></td>
+<td>Compute attention scores, weights, and context per head:<br><br>$S_h = \frac{Q_h K_h^\top}{\sqrt{d_h}} + M \quad \text{(attention scores)}$<br><br>$A_h = \mathrm{softmax}(S_h) \quad \text{(attention weights)}$<br><br>$C_h = A_h V_h \quad \text{(attention context)}$<br><br>Concatenate heads: $C = \mathrm{concat}_h(C_h) \in \mathbb{R}^{s \times d}$<br><br>Causal mask: $M[i,j] = 0$ if $j \leq i$, else $M[i,j] = -\infty$</td>
+</tr>
+<tr>
+<td><strong>6. Attention Output Projection</strong></td>
+<td>$X_{\text{attn out}} = C\, W_{o,\ell}$<br><br>$(s, d) \times (d, d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>7. Residual (Attention)</strong></td>
+<td>$X_{\text{attn out res}} = X + X_{\text{attn out}}$<br><br>$(s, d) + (s, d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>8. Pre-RMSNorm (FFN)</strong></td>
+<td>$X_{\text{ffn in}} = \mathrm{RMSNorm}(X_{\text{attn out res}}; w_{b,\ell})$<br><br>$(s, d) \odot (d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>9. SwiGLU FFN</strong></td>
+<td>$U = X_{\text{ffn in}} W_{\text{up},\ell}$<br><br>$G = X_{\text{ffn in}} W_{\text{gate},\ell}$<br><br>$X_{\text{ffn out}} = (\mathrm{SiLU}(G)\odot U)\, W_{\text{down},\ell}$<br><br>$((s, 4d) \odot (s, 4d)) \times (4d, d) \to (s, d)$<br><br>Where $\mathrm{SiLU}(x) = x \odot \sigma(x) = \dfrac{x}{1 + e^{-x}}$</td>
+</tr>
+<tr>
+<td><strong>10. Residual (FFN)</strong></td>
+<td>$X_{\text{ffn out res}} = X_{\text{attn out res}} + X_{\text{ffn out}}$<br><br>$(s, d) + (s, d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>11. Layer Output</strong></td>
+<td>Feed output into next layer: $X = X_{\text{ffn out res}}$</td>
+</tr>
+<tr>
+<td><strong>End of transformer blocks</strong></td>
+<td></td>
+</tr>
+<tr>
+<td><strong>12. Final RMSNorm</strong></td>
+<td>$X_{\text{final}} = \mathrm{RMSNorm}(X; w_{\text{final}}) = \frac{X}{\sqrt{\mathrm{mean}(X^2) + \epsilon}} \odot w_{\text{final}}$<br><br>$(s, d) \odot (d) \to (s, d)$</td>
+</tr>
+<tr>
+<td><strong>13. Logits</strong></td>
+<td>$\text{logits} = X_{\text{final}} W_{\text{lm}}$<br><br>$(s, d) \times (d, V) \to (s, V)$<br><br>Some implementations tie $W_{\text{lm}} = W_{\text{embeddings}}^T$</td>
+</tr>
+<tr>
+<td><strong>14. Output Generation</strong></td>
+<td><strong>Greedy Decoding:</strong><br>$\text{next token} = \arg\max_i \text{logits}_i$, $(s, V) \to (s,)$<br><br><strong>Temperature Sampling:</strong><br>$p_i = \frac{\exp(\text{logits}_i / T)}{\sum_j \exp(\text{logits}_j / T)}$, $(s, V) \to (s, V)$<br>$\text{next token} \sim \text{Categorical}(p)$, $(s, V) \to (s,)$<br><br><strong>Top-k Sampling:</strong><br>$\text{top-k logits} = \text{top}_k(\text{logits})$, $(s, V) \to (s, k)$<br>$p_i = \frac{\exp(\text{top-k logits}_i / T)}{\sum_j \exp(\text{top-k logits}_j / T)}$, $(s, k) \to (s, k)$<br>$\text{next token} \sim \text{Categorical}(p)$, $(s, k) \to (s,)$<br><br>Where $T$ = temperature, $k$ = number of top tokens</td>
+</tr>
+</tbody>
+</table>
+<h2>Differences between the math above and a practical Llama3 implementation</h2>
+<ol>
+<li>
+<p><strong>Batching</strong>: Real code operates on batches (the <strong>B</strong> dimension), while the math above presents a single sequence with $X$ having shape $(s,d)$. In practice, $X$ would have shape $(B, s, d)$ and this extra leading dimension is broadcast throughout all operations.</p>
+</li>
+<li>
+<p><strong>Multi-Head Attention</strong>: The math presents $Q, K, V \in \mathbb{R}^{s \times d}$ but implementations reshape to heads, e.g. $(B, s, n_h, d_h)$, compute per-head attention, concatenate back to $(B, s, d)$, then apply $W_o$.</p>
+</li>
+<li>
+<p><strong>KV Caching</strong>: For autoregressive decoding, implementations keep running key/value caches across steps so each new token only attends to previously cached states. The math shows full-sequence recomputation and omits caching; in practice logits are often computed just for the last position, with shape $(B, 1, V)$.</p>
+</li>
+<li>
+<p><strong>Grouped Query Attention (GQA)</strong>: Implementations may use fewer $K/V$ heads than $Q$ heads and repeat or map $K/V$ across query-head groups. The math assumes the same number of heads for $Q, K, V$.</p>
+</li>
+</ol>
+<p><em>Note:</em> Practical code implementation also includes details such as masking/padding mechanics, numerical-stability tricks (e.g., fused softmax with max-subtraction, epsilon clamps), device/dtype management, and kernel/layout choices for speed.</p>
+</body>
+</html>
